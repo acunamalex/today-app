@@ -14,18 +14,25 @@ import {
   Send,
   Home,
   FileText,
+  Mail,
+  Copy,
+  Loader2,
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useRouteStore } from '../stores/routeStore';
 import { useUIStore } from '../stores/uiStore';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { RouteMap } from '../components/route';
-import { Button, Card, StatusBadge, ConfirmModal, Modal } from '../components/common';
+import { Button, Card, StatusBadge, ConfirmModal, Modal, Input } from '../components/common';
 import { useReportStore } from '../stores/reportStore';
 import {
   shareExecutiveSummaryViaEmail,
   copyExecutiveSummaryToClipboard,
 } from '../services/exportService';
+import {
+  sendExecutiveSummaryEmail,
+  isEmailConfigured,
+} from '../services/emailService';
 import { formatDuration, formatDistance } from '../services/geocodeService';
 import type { Stop } from '../types';
 
@@ -36,6 +43,8 @@ export function ActiveRoute() {
   const [showSkipModal, setShowSkipModal] = useState(false);
   const [showRouteCompletedModal, setShowRouteCompletedModal] = useState(false);
   const [isSendingSummary, setIsSendingSummary] = useState(false);
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [showEmailInput, setShowEmailInput] = useState(false);
 
   const { user } = useAuthStore();
   const {
@@ -123,15 +132,37 @@ export function ActiveRoute() {
       return;
     }
 
-    setIsSendingSummary(true);
-    try {
-      shareExecutiveSummaryViaEmail(currentReport);
+    // If email service is configured and we have an email, send directly
+    if (isEmailConfigured() && recipientEmail) {
+      setIsSendingSummary(true);
+      try {
+        const result = await sendExecutiveSummaryEmail(currentReport, recipientEmail);
+        if (result.success) {
+          addToast(result.message, 'success');
+          setShowEmailInput(false);
+          setRecipientEmail('');
+        } else {
+          addToast(result.message, 'error');
+        }
+      } catch (error) {
+        addToast('Failed to send summary', 'error');
+      } finally {
+        setIsSendingSummary(false);
+      }
+    } else {
+      // Fall back to email client
+      shareExecutiveSummaryViaEmail(currentReport, recipientEmail);
       addToast('Opening email client...', 'success');
-    } catch (error) {
-      addToast('Failed to send summary', 'error');
-    } finally {
-      setIsSendingSummary(false);
     }
+  };
+
+  const handleOpenEmailClient = () => {
+    if (!currentReport) {
+      addToast('Report not ready yet', 'warning');
+      return;
+    }
+    shareExecutiveSummaryViaEmail(currentReport, recipientEmail);
+    addToast('Opening email client...', 'success');
   };
 
   const handleCopySummary = async () => {
@@ -240,48 +271,68 @@ export function ActiveRoute() {
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <Button
-                  fullWidth
-                  onClick={handleSendSummary}
-                  isLoading={isSendingSummary}
-                  leftIcon={<Send className="w-4 h-4" />}
-                >
-                  Send Executive Summary
-                </Button>
+              <div className="space-y-3">
+                {/* Email input section */}
+                <div className="space-y-2">
+                  <Input
+                    label="Recipient Email"
+                    type="email"
+                    value={recipientEmail}
+                    onChange={(e) => setRecipientEmail(e.target.value)}
+                    placeholder="manager@company.com"
+                  />
 
-                <Button
-                  fullWidth
-                  variant="outline"
-                  onClick={handleCopySummary}
-                  leftIcon={<FileText className="w-4 h-4" />}
-                >
-                  Copy Summary to Clipboard
-                </Button>
+                  <Button
+                    fullWidth
+                    onClick={handleSendSummary}
+                    isLoading={isSendingSummary}
+                    leftIcon={<Send className="w-4 h-4" />}
+                    disabled={!recipientEmail || !recipientEmail.includes('@')}
+                  >
+                    {isEmailConfigured() ? 'Send Email Directly' : 'Send via Email Client'}
+                  </Button>
 
-                <Button
-                  fullWidth
-                  variant="outline"
-                  onClick={() => {
-                    setShowRouteCompletedModal(false);
-                    navigate('/reports');
-                  }}
-                  leftIcon={<FileText className="w-4 h-4" />}
-                >
-                  View Full Report
-                </Button>
+                  {!isEmailConfigured() && (
+                    <p className="text-xs text-slate-400 text-center">
+                      Opens your default email app
+                    </p>
+                  )}
+                </div>
 
-                <Button
-                  fullWidth
-                  variant="ghost"
-                  onClick={() => {
-                    setShowRouteCompletedModal(false);
-                    navigate('/');
-                  }}
-                  leftIcon={<Home className="w-4 h-4" />}
-                >
-                  Back to Home
-                </Button>
+                <div className="border-t border-slate-200 pt-3 space-y-2">
+                  <Button
+                    fullWidth
+                    variant="outline"
+                    onClick={handleCopySummary}
+                    leftIcon={<Copy className="w-4 h-4" />}
+                  >
+                    Copy Summary to Clipboard
+                  </Button>
+
+                  <Button
+                    fullWidth
+                    variant="outline"
+                    onClick={() => {
+                      setShowRouteCompletedModal(false);
+                      navigate('/reports');
+                    }}
+                    leftIcon={<FileText className="w-4 h-4" />}
+                  >
+                    View Full Report
+                  </Button>
+
+                  <Button
+                    fullWidth
+                    variant="ghost"
+                    onClick={() => {
+                      setShowRouteCompletedModal(false);
+                      navigate('/');
+                    }}
+                    leftIcon={<Home className="w-4 h-4" />}
+                  >
+                    Back to Home
+                  </Button>
+                </div>
               </div>
             </div>
           </Modal>
@@ -532,48 +583,68 @@ export function ActiveRoute() {
             </p>
           </div>
 
-          <div className="space-y-2">
-            <Button
-              fullWidth
-              onClick={handleSendSummary}
-              isLoading={isSendingSummary}
-              leftIcon={<Send className="w-4 h-4" />}
-            >
-              Send Executive Summary
-            </Button>
+          <div className="space-y-3">
+            {/* Email input section */}
+            <div className="space-y-2">
+              <Input
+                label="Recipient Email"
+                type="email"
+                value={recipientEmail}
+                onChange={(e) => setRecipientEmail(e.target.value)}
+                placeholder="manager@company.com"
+              />
 
-            <Button
-              fullWidth
-              variant="outline"
-              onClick={handleCopySummary}
-              leftIcon={<FileText className="w-4 h-4" />}
-            >
-              Copy Summary to Clipboard
-            </Button>
+              <Button
+                fullWidth
+                onClick={handleSendSummary}
+                isLoading={isSendingSummary}
+                leftIcon={<Send className="w-4 h-4" />}
+                disabled={!recipientEmail || !recipientEmail.includes('@')}
+              >
+                {isEmailConfigured() ? 'Send Email Directly' : 'Send via Email Client'}
+              </Button>
 
-            <Button
-              fullWidth
-              variant="outline"
-              onClick={() => {
-                setShowRouteCompletedModal(false);
-                navigate('/reports');
-              }}
-              leftIcon={<FileText className="w-4 h-4" />}
-            >
-              View Full Report
-            </Button>
+              {!isEmailConfigured() && (
+                <p className="text-xs text-slate-400 text-center">
+                  Opens your default email app
+                </p>
+              )}
+            </div>
 
-            <Button
-              fullWidth
-              variant="ghost"
-              onClick={() => {
-                setShowRouteCompletedModal(false);
-                navigate('/');
-              }}
-              leftIcon={<Home className="w-4 h-4" />}
-            >
-              Back to Home
-            </Button>
+            <div className="border-t border-slate-200 pt-3 space-y-2">
+              <Button
+                fullWidth
+                variant="outline"
+                onClick={handleCopySummary}
+                leftIcon={<Copy className="w-4 h-4" />}
+              >
+                Copy Summary to Clipboard
+              </Button>
+
+              <Button
+                fullWidth
+                variant="outline"
+                onClick={() => {
+                  setShowRouteCompletedModal(false);
+                  navigate('/reports');
+                }}
+                leftIcon={<FileText className="w-4 h-4" />}
+              >
+                View Full Report
+              </Button>
+
+              <Button
+                fullWidth
+                variant="ghost"
+                onClick={() => {
+                  setShowRouteCompletedModal(false);
+                  navigate('/');
+                }}
+                leftIcon={<Home className="w-4 h-4" />}
+              >
+                Back to Home
+              </Button>
+            </div>
           </div>
         </div>
       </Modal>

@@ -31,6 +31,10 @@ import {
   copyExecutiveSummaryToClipboard,
 } from '../services/exportService';
 import {
+  sendExecutiveSummaryEmail,
+  isEmailConfigured,
+} from '../services/emailService';
+import {
   Button,
   Card,
   CardHeader,
@@ -208,6 +212,7 @@ export function Reports() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [exportEmail, setExportEmail] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
 
   const { user } = useAuthStore();
   const { currentRoute } = useRouteStore();
@@ -266,12 +271,35 @@ export function Reports() {
     }
   };
 
-  const handleShareSummary = (method: 'email' | 'copy') => {
+  const handleShareSummary = async (method: 'email' | 'copy' | 'direct') => {
     if (!currentReport) return;
 
-    if (method === 'email') {
+    if (method === 'direct') {
+      // Send email directly without opening email client
+      if (!exportEmail || !exportEmail.includes('@')) {
+        addToast('Please enter a valid email address', 'warning');
+        return;
+      }
+
+      setIsSendingEmail(true);
+      try {
+        const result = await sendExecutiveSummaryEmail(currentReport, exportEmail);
+        if (result.success) {
+          addToast(result.message, 'success');
+          setShowShareModal(false);
+          setExportEmail('');
+        } else {
+          addToast(result.message, 'error');
+        }
+      } catch (error) {
+        addToast('Failed to send email', 'error');
+      } finally {
+        setIsSendingEmail(false);
+      }
+    } else if (method === 'email') {
       shareExecutiveSummaryViaEmail(currentReport, exportEmail);
       addToast('Opening email client...', 'success');
+      setShowShareModal(false);
     } else {
       copyExecutiveSummaryToClipboard(currentReport).then((success) => {
         if (success) {
@@ -280,8 +308,8 @@ export function Reports() {
           addToast('Failed to copy', 'error');
         }
       });
+      setShowShareModal(false);
     }
-    setShowShareModal(false);
   };
 
   if (isLoading || isGenerating) {
@@ -529,21 +557,33 @@ export function Reports() {
           </p>
 
           <Input
-            label="Email Address (optional)"
+            label="Recipient Email"
             type="email"
             value={exportEmail}
             onChange={(e) => setExportEmail(e.target.value)}
-            placeholder="recipient@email.com"
+            placeholder="manager@company.com"
           />
 
           <div className="space-y-2">
-            <Button
-              fullWidth
-              onClick={() => handleShareSummary('email')}
-              leftIcon={<Mail className="w-4 h-4" />}
-            >
-              Send via Email
-            </Button>
+            {isEmailConfigured() ? (
+              <Button
+                fullWidth
+                onClick={() => handleShareSummary('direct')}
+                isLoading={isSendingEmail}
+                leftIcon={<Send className="w-4 h-4" />}
+                disabled={!exportEmail || !exportEmail.includes('@')}
+              >
+                Send Email Directly
+              </Button>
+            ) : (
+              <Button
+                fullWidth
+                onClick={() => handleShareSummary('email')}
+                leftIcon={<Mail className="w-4 h-4" />}
+              >
+                Send via Email Client
+              </Button>
+            )}
             <Button
               fullWidth
               variant="outline"
@@ -555,7 +595,9 @@ export function Reports() {
           </div>
 
           <p className="text-xs text-slate-400 text-center">
-            The summary includes performance metrics, trends, AI observations, and flagged issues.
+            {isEmailConfigured()
+              ? 'Email will be sent directly from the app.'
+              : 'Opens your default email app to send the summary.'}
           </p>
         </div>
       </Modal>
