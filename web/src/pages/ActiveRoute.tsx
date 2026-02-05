@@ -11,14 +11,21 @@ import {
   Clock,
   Flag,
   ArrowLeft,
-  Menu,
+  Send,
+  Home,
+  FileText,
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useRouteStore } from '../stores/routeStore';
 import { useUIStore } from '../stores/uiStore';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { RouteMap } from '../components/route';
-import { Button, Card, StatusBadge, ConfirmModal } from '../components/common';
+import { Button, Card, StatusBadge, ConfirmModal, Modal } from '../components/common';
+import { useReportStore } from '../stores/reportStore';
+import {
+  shareExecutiveSummaryViaEmail,
+  copyExecutiveSummaryToClipboard,
+} from '../services/exportService';
 import { formatDuration, formatDistance } from '../services/geocodeService';
 import type { Stop } from '../types';
 
@@ -27,6 +34,8 @@ export function ActiveRoute() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [showSkipModal, setShowSkipModal] = useState(false);
+  const [showRouteCompletedModal, setShowRouteCompletedModal] = useState(false);
+  const [isSendingSummary, setIsSendingSummary] = useState(false);
 
   const { user } = useAuthStore();
   const {
@@ -43,6 +52,7 @@ export function ActiveRoute() {
   } = useRouteStore();
   const { addToast } = useUIStore();
   const { position } = useGeolocation({ watch: true });
+  const { currentReport, generateReport } = useReportStore();
 
   // Load today's route
   useEffect(() => {
@@ -94,9 +104,47 @@ export function ActiveRoute() {
     try {
       await updateRouteStatus('completed');
       setShowCompleteModal(false);
-      navigate('/reports');
+
+      // Generate the report
+      if (currentRoute) {
+        await generateReport(currentRoute.id);
+      }
+
+      // Show the route completed modal with options
+      setShowRouteCompletedModal(true);
     } catch (error) {
       addToast('Failed to complete route', 'error');
+    }
+  };
+
+  const handleSendSummary = async () => {
+    if (!currentReport) {
+      addToast('Report not ready yet', 'warning');
+      return;
+    }
+
+    setIsSendingSummary(true);
+    try {
+      shareExecutiveSummaryViaEmail(currentReport);
+      addToast('Opening email client...', 'success');
+    } catch (error) {
+      addToast('Failed to send summary', 'error');
+    } finally {
+      setIsSendingSummary(false);
+    }
+  };
+
+  const handleCopySummary = async () => {
+    if (!currentReport) {
+      addToast('Report not ready yet', 'warning');
+      return;
+    }
+
+    const success = await copyExecutiveSummaryToClipboard(currentReport);
+    if (success) {
+      addToast('Summary copied to clipboard!', 'success');
+    } else {
+      addToast('Failed to copy summary', 'error');
     }
   };
 
@@ -333,6 +381,72 @@ export function ActiveRoute() {
         }
         confirmText="Complete & View Report"
       />
+
+      {/* Route Completed Modal */}
+      <Modal
+        isOpen={showRouteCompletedModal}
+        onClose={() => {}}
+        title="Route Complete!"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="text-center py-4">
+            <div className="w-16 h-16 rounded-full bg-success-100 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-10 h-10 text-success-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">
+              Great Work Today!
+            </h3>
+            <p className="text-slate-600 text-sm">
+              You completed {completedStops} of {stops.length} stops.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Button
+              fullWidth
+              onClick={handleSendSummary}
+              isLoading={isSendingSummary}
+              leftIcon={<Send className="w-4 h-4" />}
+            >
+              Send Executive Summary
+            </Button>
+
+            <Button
+              fullWidth
+              variant="outline"
+              onClick={handleCopySummary}
+              leftIcon={<FileText className="w-4 h-4" />}
+            >
+              Copy Summary to Clipboard
+            </Button>
+
+            <Button
+              fullWidth
+              variant="outline"
+              onClick={() => {
+                setShowRouteCompletedModal(false);
+                navigate('/reports');
+              }}
+              leftIcon={<FileText className="w-4 h-4" />}
+            >
+              View Full Report
+            </Button>
+
+            <Button
+              fullWidth
+              variant="ghost"
+              onClick={() => {
+                setShowRouteCompletedModal(false);
+                navigate('/');
+              }}
+              leftIcon={<Home className="w-4 h-4" />}
+            >
+              Back to Home
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

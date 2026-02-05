@@ -17,12 +17,19 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  Share2,
+  Copy,
+  Send,
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useRouteStore } from '../stores/routeStore';
 import { useReportStore } from '../stores/reportStore';
 import { useUIStore } from '../stores/uiStore';
-import { exportReport } from '../services/exportService';
+import {
+  exportReport,
+  shareExecutiveSummaryViaEmail,
+  copyExecutiveSummaryToClipboard,
+} from '../services/exportService';
 import {
   Button,
   Card,
@@ -198,6 +205,7 @@ function StopReportCard({
 export function Reports() {
   const navigate = useNavigate();
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [exportEmail, setExportEmail] = useState('');
   const [isExporting, setIsExporting] = useState(false);
 
@@ -258,6 +266,24 @@ export function Reports() {
     }
   };
 
+  const handleShareSummary = (method: 'email' | 'copy') => {
+    if (!currentReport) return;
+
+    if (method === 'email') {
+      shareExecutiveSummaryViaEmail(currentReport, exportEmail);
+      addToast('Opening email client...', 'success');
+    } else {
+      copyExecutiveSummaryToClipboard(currentReport).then((success) => {
+        if (success) {
+          addToast('Summary copied to clipboard!', 'success');
+        } else {
+          addToast('Failed to copy', 'error');
+        }
+      });
+    }
+    setShowShareModal(false);
+  };
+
   if (isLoading || isGenerating) {
     return (
       <div className="min-h-screen bg-background p-4">
@@ -305,14 +331,24 @@ export function Reports() {
               </p>
             </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowExportModal(true)}
-            leftIcon={<Download className="w-4 h-4" />}
-          >
-            Export
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowShareModal(true)}
+              leftIcon={<Send className="w-4 h-4" />}
+            >
+              Send Summary
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowExportModal(true)}
+              leftIcon={<Download className="w-4 h-4" />}
+            >
+              Export
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -477,6 +513,50 @@ export function Reports() {
               Share via Email
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Share Executive Summary Modal */}
+      <Modal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        title="Share Executive Summary"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Share your AI-powered executive summary with key metrics, trends, and insights.
+          </p>
+
+          <Input
+            label="Email Address (optional)"
+            type="email"
+            value={exportEmail}
+            onChange={(e) => setExportEmail(e.target.value)}
+            placeholder="recipient@email.com"
+          />
+
+          <div className="space-y-2">
+            <Button
+              fullWidth
+              onClick={() => handleShareSummary('email')}
+              leftIcon={<Mail className="w-4 h-4" />}
+            >
+              Send via Email
+            </Button>
+            <Button
+              fullWidth
+              variant="outline"
+              onClick={() => handleShareSummary('copy')}
+              leftIcon={<Copy className="w-4 h-4" />}
+            >
+              Copy to Clipboard
+            </Button>
+          </div>
+
+          <p className="text-xs text-slate-400 text-center">
+            The summary includes performance metrics, trends, AI observations, and flagged issues.
+          </p>
         </div>
       </Modal>
     </div>

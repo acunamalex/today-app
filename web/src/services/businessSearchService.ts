@@ -1,7 +1,8 @@
-import type { Coordinates, GeocodingResult } from '../types';
+import type { Coordinates } from '../types';
 
-// Using Nominatim/Overpass API (OpenStreetMap) for free business search
+// Using multiple free APIs for business search
 const OVERPASS_API = 'https://overpass-api.de/api/interpreter';
+const NOMINATIM_SEARCH = 'https://nominatim.openstreetmap.org/search';
 
 export interface BusinessResult {
   id: string;
@@ -9,7 +10,7 @@ export interface BusinessResult {
   address: string;
   coordinates: Coordinates;
   type: string;
-  distance?: number; // meters from search center
+  distance?: number;
   phone?: string;
   website?: string;
   openingHours?: string;
@@ -17,9 +18,9 @@ export interface BusinessResult {
 
 export interface BusinessSearchOptions {
   center: Coordinates;
-  radius: number; // meters (max 50000)
+  radius: number;
   category?: BusinessCategory;
-  keyword?: string; // Search by name or type keyword
+  keyword?: string;
   limit?: number;
 }
 
@@ -32,53 +33,118 @@ export type BusinessCategory =
   | 'automotive'
   | 'financial'
   | 'accommodation'
-  | 'education';
-
-// Map categories to OSM tags
-const categoryTags: Record<BusinessCategory, string> = {
-  all: 'shop|office|amenity',
-  restaurant: 'amenity~"restaurant|cafe|fast_food|bar"',
-  retail: 'shop',
-  office: 'office',
-  healthcare: 'amenity~"hospital|clinic|doctors|pharmacy|dentist"',
-  automotive: 'shop~"car|car_repair|car_parts"|amenity~"fuel|car_wash"',
-  financial: 'amenity~"bank|atm"|office~"insurance|financial"',
-  accommodation: 'tourism~"hotel|motel|hostel|guest_house"',
-  education: 'amenity~"school|university|college|kindergarten"',
-};
+  | 'education'
+  | 'services';
 
 /**
- * Search for businesses near a location using OpenStreetMap Overpass API
+ * Search for businesses using Nominatim (OpenStreetMap) - better for keyword search
  */
-export async function searchBusinesses(
+async function searchWithNominatim(
+  keyword: string,
+  center: Coordinates,
+  radius: number,
+  limit: number
+): Promise<BusinessResult[]> {
+  // Calculate viewbox from center and radius
+  const latDelta = (radius / 111320);
+  const lngDelta = (radius / (111320 * Math.cos(center.lat * Math.PI / 180)));
+
+  const viewbox = [
+    center.lng - lngDelta,
+    center.lat + latDelta,
+    center.lng + lngDelta,
+    center.lat - latDelta,
+  ].join(',');
+
+  const params = new URLSearchParams({
+    q: keyword,
+    format: 'json',
+    addressdetails: '1',
+    extratags: '1',
+    namedetails: '1',
+    viewbox: viewbox,
+    bounded: '1',
+    limit: String(Math.min(limit * 2, 50)),
+  });
+
+  try {
+    const response = await fetch(`${NOMINATIM_SEARCH}?${params}`, {
+      headers: {
+        'User-Agent': 'TodayRouteApp/1.0',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Nominatim error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    return data
+      .filter((item: any) => {
+        // Filter to only include businesses (not residential, highways, etc.)
+        const itemClass = item.class || '';
+        const itemType = item.type || '';
+        const excludeClasses = ['highway', 'boundary', 'place', 'natural', 'waterway', 'landuse'];
+        const excludeTypes = ['residential', 'house', 'apartments', 'suburb', 'neighbourhood'];
+        return !excludeClasses.includes(itemClass) && !excludeTypes.includes(itemType);
+      })
+      .map((item: any) => {
+        const lat = parseFloat(item.lat);
+        const lng = parseFloat(item.lon);
+
+        return {
+          id: `nom-${item.place_id}`,
+          name: item.namedetails?.name || item.display_name.split(',')[0],
+          address: formatNominatimAddress(item),
+          coordinates: { lat, lng },
+          type: formatTagValue(item.type || item.class || 'Business'),
+          distance: calculateDistance(center, { lat, lng }),
+          phone: item.extratags?.phone || item.extratags?.['contact:phone'],
+          website: item.extratags?.website || item.extratags?.['contact:website'],
+          openingHours: item.extratags?.opening_hours,
+        };
+      })
+      .filter((r: BusinessResult) => (r.distance || 0) <= radius)
+      .slice(0, limit);
+  } catch (error) {
+    console.error('Nominatim search error:', error);
+    return [];
+  }
+}
+
+/**
+ * Search for businesses using Overpass API with improved query
+ */
+async function searchWithOverpass(
   options: BusinessSearchOptions
 ): Promise<BusinessResult[]> {
   const { center, radius, category = 'all', keyword, limit = 50 } = options;
-
-  // Build Overpass query
-  const tagFilter = categoryTags[category];
   const boundingRadius = Math.min(radius, 50000);
 
-  // If keyword provided, search for name containing keyword (case-insensitive)
   let query: string;
+
   if (keyword && keyword.trim()) {
-    const escapedKeyword = keyword.trim().replace(/"/g, '\\"');
+    // Keyword search - search across all name tags
+    const escapedKeyword = keyword.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     query = `
-      [out:json][timeout:25];
+      [out:json][timeout:30];
       (
-        node["name"~"${escapedKeyword}",i][${tagFilter}](around:${boundingRadius},${center.lat},${center.lng});
-        way["name"~"${escapedKeyword}",i][${tagFilter}](around:${boundingRadius},${center.lat},${center.lng});
         node["name"~"${escapedKeyword}",i](around:${boundingRadius},${center.lat},${center.lng});
         way["name"~"${escapedKeyword}",i](around:${boundingRadius},${center.lat},${center.lng});
+        node["brand"~"${escapedKeyword}",i](around:${boundingRadius},${center.lat},${center.lng});
+        way["brand"~"${escapedKeyword}",i](around:${boundingRadius},${center.lat},${center.lng});
       );
       out center ${limit * 2};
     `;
   } else {
+    // Category-based search
+    const categoryQueries = getCategoryQuery(category);
     query = `
-      [out:json][timeout:25];
+      [out:json][timeout:30];
       (
-        node[${tagFilter}](around:${boundingRadius},${center.lat},${center.lng});
-        way[${tagFilter}](around:${boundingRadius},${center.lat},${center.lng});
+        ${categoryQueries.map(q => `node${q}(around:${boundingRadius},${center.lat},${center.lng});`).join('\n        ')}
+        ${categoryQueries.map(q => `way${q}(around:${boundingRadius},${center.lat},${center.lng});`).join('\n        ')}
       );
       out center ${limit};
     `;
@@ -100,14 +166,14 @@ export async function searchBusinesses(
     const data = await response.json();
 
     let results: BusinessResult[] = data.elements
-      .filter((el: any) => el.tags?.name)
+      .filter((el: any) => el.tags?.name || el.tags?.brand)
       .map((el: any) => {
         const lat = el.lat || el.center?.lat;
         const lng = el.lon || el.center?.lon;
 
         return {
-          id: el.id.toString(),
-          name: el.tags.name,
+          id: `osm-${el.id}`,
+          name: el.tags.name || el.tags.brand,
           address: formatOSMAddress(el.tags),
           coordinates: { lat, lng },
           type: getBusinessType(el.tags),
@@ -119,52 +185,157 @@ export async function searchBusinesses(
       })
       .sort((a: BusinessResult, b: BusinessResult) => (a.distance || 0) - (b.distance || 0));
 
-    // If keyword was used, also filter by keyword in type (in case the regex didn't match perfectly)
-    if (keyword && keyword.trim()) {
-      const lowerKeyword = keyword.toLowerCase();
-      results = results.filter(
-        (r) =>
-          r.name.toLowerCase().includes(lowerKeyword) ||
-          r.type.toLowerCase().includes(lowerKeyword)
-      );
-    }
-
-    // Deduplicate by ID and limit results
+    // Deduplicate
     const seen = new Set<string>();
     results = results.filter((r) => {
-      if (seen.has(r.id)) return false;
-      seen.add(r.id);
+      const key = `${r.name.toLowerCase()}-${Math.round(r.coordinates.lat * 1000)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
       return true;
     }).slice(0, limit);
 
     return results;
   } catch (error) {
-    console.error('Business search error:', error);
+    console.error('Overpass search error:', error);
     return [];
   }
 }
 
 /**
- * Search for businesses along a route
+ * Get Overpass query parts for a category
+ */
+function getCategoryQuery(category: BusinessCategory): string[] {
+  const queries: Record<BusinessCategory, string[]> = {
+    all: [
+      '["shop"]["name"]',
+      '["amenity"~"restaurant|cafe|bar|bank|pharmacy|hospital|clinic"]["name"]',
+      '["office"]["name"]',
+    ],
+    restaurant: [
+      '["amenity"="restaurant"]["name"]',
+      '["amenity"="cafe"]["name"]',
+      '["amenity"="fast_food"]["name"]',
+      '["amenity"="bar"]["name"]',
+      '["amenity"="pub"]["name"]',
+      '["shop"="bakery"]["name"]',
+    ],
+    retail: [
+      '["shop"]["name"]',
+    ],
+    office: [
+      '["office"]["name"]',
+    ],
+    healthcare: [
+      '["amenity"="hospital"]["name"]',
+      '["amenity"="clinic"]["name"]',
+      '["amenity"="doctors"]["name"]',
+      '["amenity"="pharmacy"]["name"]',
+      '["amenity"="dentist"]["name"]',
+      '["healthcare"]["name"]',
+    ],
+    automotive: [
+      '["shop"="car"]["name"]',
+      '["shop"="car_repair"]["name"]',
+      '["shop"="car_parts"]["name"]',
+      '["amenity"="fuel"]["name"]',
+      '["amenity"="car_wash"]["name"]',
+    ],
+    financial: [
+      '["amenity"="bank"]["name"]',
+      '["office"="insurance"]["name"]',
+      '["office"="financial"]["name"]',
+    ],
+    accommodation: [
+      '["tourism"="hotel"]["name"]',
+      '["tourism"="motel"]["name"]',
+      '["tourism"="hostel"]["name"]',
+      '["tourism"="guest_house"]["name"]',
+    ],
+    education: [
+      '["amenity"="school"]["name"]',
+      '["amenity"="university"]["name"]',
+      '["amenity"="college"]["name"]',
+      '["amenity"="kindergarten"]["name"]',
+    ],
+    services: [
+      '["shop"="hairdresser"]["name"]',
+      '["shop"="beauty"]["name"]',
+      '["shop"="laundry"]["name"]',
+      '["craft"]["name"]',
+    ],
+  };
+
+  return queries[category] || queries.all;
+}
+
+/**
+ * Main search function - combines multiple sources for better results
+ */
+export async function searchBusinesses(
+  options: BusinessSearchOptions
+): Promise<BusinessResult[]> {
+  const { keyword, limit = 50 } = options;
+
+  let results: BusinessResult[] = [];
+
+  // If keyword search, use both Nominatim and Overpass
+  if (keyword && keyword.trim()) {
+    // First try Nominatim (good for text search)
+    const nominatimResults = await searchWithNominatim(
+      keyword,
+      options.center,
+      options.radius,
+      limit
+    );
+    results = [...nominatimResults];
+
+    // Wait to respect rate limits
+    await new Promise(resolve => setTimeout(resolve, 1100));
+
+    // Then try Overpass (good for structured data)
+    const overpassResults = await searchWithOverpass(options);
+    results = [...results, ...overpassResults];
+  } else {
+    // Category-only search - just use Overpass
+    results = await searchWithOverpass(options);
+  }
+
+  // Deduplicate by name + approximate location
+  const seen = new Set<string>();
+  const deduplicated = results.filter((r) => {
+    const key = `${r.name.toLowerCase().trim()}-${Math.round(r.coordinates.lat * 100)}-${Math.round(r.coordinates.lng * 100)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // Sort by distance and limit
+  return deduplicated
+    .sort((a, b) => (a.distance || 0) - (b.distance || 0))
+    .slice(0, limit);
+}
+
+/**
+ * Search along a route
  */
 export async function searchBusinessesAlongRoute(
   stops: { coordinates: Coordinates }[],
   category: BusinessCategory = 'all',
-  radiusPerStop: number = 1000
+  keyword?: string,
+  radiusPerStop: number = 2000
 ): Promise<BusinessResult[]> {
   const allResults: BusinessResult[] = [];
   const seenIds = new Set<string>();
 
-  // Search around each stop
   for (const stop of stops) {
     const results = await searchBusinesses({
       center: stop.coordinates,
       radius: radiusPerStop,
       category,
+      keyword,
       limit: 20,
     });
 
-    // Add unique results
     for (const result of results) {
       if (!seenIds.has(result.id)) {
         seenIds.add(result.id);
@@ -173,24 +344,38 @@ export async function searchBusinessesAlongRoute(
     }
 
     // Rate limiting
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1500));
   }
 
-  // Sort by distance from first stop
-  if (stops.length > 0) {
-    allResults.sort(
-      (a, b) =>
-        calculateDistance(stops[0].coordinates, a.coordinates) -
-        calculateDistance(stops[0].coordinates, b.coordinates)
-    );
-  }
-
-  return allResults;
+  return allResults.sort((a, b) => (a.distance || 0) - (b.distance || 0));
 }
 
-/**
- * Format OSM tags into a readable address
- */
+// Helper functions
+function formatNominatimAddress(item: any): string {
+  const addr = item.address;
+  if (!addr) {
+    return item.display_name?.split(',').slice(0, 3).join(', ') || 'Address not available';
+  }
+
+  const parts: string[] = [];
+  if (addr.house_number && addr.road) {
+    parts.push(`${addr.house_number} ${addr.road}`);
+  } else if (addr.road) {
+    parts.push(addr.road);
+  }
+  if (addr.city || addr.town || addr.village) {
+    parts.push(addr.city || addr.town || addr.village);
+  }
+  if (addr.state) {
+    parts.push(addr.state);
+  }
+  if (addr.postcode) {
+    parts.push(addr.postcode);
+  }
+
+  return parts.join(', ') || 'Address not available';
+}
+
 function formatOSMAddress(tags: any): string {
   const parts: string[] = [];
 
@@ -215,28 +400,16 @@ function formatOSMAddress(tags: any): string {
   return parts.join(', ') || 'Address not available';
 }
 
-/**
- * Get a human-readable business type from OSM tags
- */
 function getBusinessType(tags: any): string {
-  if (tags.amenity) {
-    return formatTagValue(tags.amenity);
-  }
-  if (tags.shop) {
-    return `${formatTagValue(tags.shop)} Shop`;
-  }
-  if (tags.office) {
-    return `${formatTagValue(tags.office)} Office`;
-  }
-  if (tags.tourism) {
-    return formatTagValue(tags.tourism);
-  }
+  if (tags.amenity) return formatTagValue(tags.amenity);
+  if (tags.shop) return `${formatTagValue(tags.shop)} Shop`;
+  if (tags.office) return `${formatTagValue(tags.office)} Office`;
+  if (tags.tourism) return formatTagValue(tags.tourism);
+  if (tags.craft) return formatTagValue(tags.craft);
+  if (tags.healthcare) return formatTagValue(tags.healthcare);
   return 'Business';
 }
 
-/**
- * Format OSM tag value to human-readable string
- */
 function formatTagValue(value: string): string {
   return value
     .split('_')
@@ -244,11 +417,8 @@ function formatTagValue(value: string): string {
     .join(' ');
 }
 
-/**
- * Calculate distance between two coordinates (Haversine formula)
- */
 function calculateDistance(from: Coordinates, to: Coordinates): number {
-  const R = 6371e3; // Earth's radius in meters
+  const R = 6371e3;
   const lat1 = (from.lat * Math.PI) / 180;
   const lat2 = (to.lat * Math.PI) / 180;
   const deltaLat = ((to.lat - from.lat) * Math.PI) / 180;
@@ -256,18 +426,12 @@ function calculateDistance(from: Coordinates, to: Coordinates): number {
 
   const a =
     Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
-    Math.cos(lat1) *
-      Math.cos(lat2) *
-      Math.sin(deltaLng / 2) *
-      Math.sin(deltaLng / 2);
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c;
 }
 
-/**
- * Format distance for display
- */
 export function formatBusinessDistance(meters: number): string {
   if (meters < 1000) {
     return `${Math.round(meters)} m`;
@@ -275,9 +439,6 @@ export function formatBusinessDistance(meters: number): string {
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
-/**
- * Get category options for UI
- */
 export function getBusinessCategories(): { value: BusinessCategory; label: string }[] {
   return [
     { value: 'all', label: 'All Businesses' },
@@ -289,5 +450,6 @@ export function getBusinessCategories(): { value: BusinessCategory; label: strin
     { value: 'financial', label: 'Financial Services' },
     { value: 'accommodation', label: 'Hotels & Lodging' },
     { value: 'education', label: 'Education' },
+    { value: 'services', label: 'Services' },
   ];
 }

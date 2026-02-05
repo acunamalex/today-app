@@ -239,9 +239,15 @@ export async function getStopResponses(stopId: string): Promise<QuestionResponse
 
 // Helper function to get active question templates
 export async function getActiveQuestions(userId: string): Promise<QuestionTemplate[]> {
-  return db.questionTemplates
-    .where({ userId, isActive: true })
-    .sortBy('order');
+  // Can't use compound where with boolean, so filter manually
+  const allTemplates = await db.questionTemplates
+    .where('userId')
+    .equals(userId)
+    .toArray();
+
+  return allTemplates
+    .filter(t => t.isActive)
+    .sort((a, b) => a.order - b.order);
 }
 
 // Clear all data (for testing/reset)
