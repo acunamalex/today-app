@@ -3,6 +3,10 @@ import type { Coordinates } from '../types';
 // Using multiple free APIs for business search
 const OVERPASS_API = 'https://overpass-api.de/api/interpreter';
 const NOMINATIM_SEARCH = 'https://nominatim.openstreetmap.org/search';
+const GOOGLE_PLACES_API = 'https://maps.googleapis.com/maps/api/place';
+
+// Google Places API key (optional - enhances search results)
+const GOOGLE_PLACES_KEY = import.meta.env.VITE_GOOGLE_PLACES_API_KEY || '';
 
 export interface BusinessResult {
   id: string;
@@ -28,6 +32,8 @@ export type BusinessCategory =
   | 'all'
   | 'restaurant'
   | 'retail'
+  | 'electronics'
+  | 'wireless'
   | 'office'
   | 'healthcare'
   | 'automotive'
@@ -111,6 +117,83 @@ async function searchWithNominatim(
     console.error('Nominatim search error:', error);
     return [];
   }
+}
+
+/**
+ * Search for businesses using Google Places API (much better results)
+ */
+async function searchWithGooglePlaces(
+  keyword: string,
+  center: Coordinates,
+  radius: number,
+  limit: number
+): Promise<BusinessResult[]> {
+  if (!GOOGLE_PLACES_KEY) {
+    return [];
+  }
+
+  try {
+    const params = new URLSearchParams({
+      location: `${center.lat},${center.lng}`,
+      radius: String(Math.min(radius, 50000)),
+      keyword: keyword,
+      type: 'store|electronics_store|shopping_mall',
+      key: GOOGLE_PLACES_KEY,
+    });
+
+    const response = await fetch(
+      `${GOOGLE_PLACES_API}/nearbysearch/json?${params}`
+    );
+
+    if (!response.ok) {
+      throw new Error(`Google Places error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      console.error('Google Places API error:', data.status, data.error_message);
+      return [];
+    }
+
+    return (data.results || [])
+      .filter((place: any) => place.business_status === 'OPERATIONAL')
+      .slice(0, limit)
+      .map((place: any) => ({
+        id: `gp-${place.place_id}`,
+        name: place.name,
+        address: place.vicinity || place.formatted_address || '',
+        coordinates: {
+          lat: place.geometry.location.lat,
+          lng: place.geometry.location.lng,
+        },
+        type: formatGooglePlaceType(place.types),
+        distance: calculateDistance(center, {
+          lat: place.geometry.location.lat,
+          lng: place.geometry.location.lng,
+        }),
+        openingHours: place.opening_hours?.open_now ? 'Open now' : undefined,
+      }));
+  } catch (error) {
+    console.error('Google Places search error:', error);
+    return [];
+  }
+}
+
+function formatGooglePlaceType(types: string[]): string {
+  const typeMap: Record<string, string> = {
+    electronics_store: 'Electronics Store',
+    mobile_phone_store: 'Mobile Phone Store',
+    store: 'Store',
+    shopping_mall: 'Shopping Mall',
+    point_of_interest: 'Business',
+    establishment: 'Business',
+  };
+
+  for (const t of types) {
+    if (typeMap[t]) return typeMap[t];
+  }
+  return 'Business';
 }
 
 /**
@@ -221,6 +304,21 @@ function getCategoryQuery(category: BusinessCategory): string[] {
     ],
     retail: [
       '["shop"]["name"]',
+      '["shop"="electronics"]["name"]',
+      '["shop"="mobile_phone"]["name"]',
+      '["shop"="computer"]["name"]',
+    ],
+    electronics: [
+      '["shop"="electronics"]["name"]',
+      '["shop"="mobile_phone"]["name"]',
+      '["shop"="computer"]["name"]',
+      '["shop"="hifi"]["name"]',
+    ],
+    wireless: [
+      '["shop"="mobile_phone"]["name"]',
+      '["shop"="electronics"]["name"]',
+      '["name"~"verizon|t-mobile|at&t|sprint|cricket|metro|boost|wireless|cellular|cell phone|phone repair",i]',
+      '["brand"~"verizon|t-mobile|at&t|cricket|metro|boost",i]',
     ],
     office: [
       '["office"]["name"]',
@@ -277,26 +375,34 @@ export async function searchBusinesses(
   const { keyword, limit = 50 } = options;
 
   let results: BusinessResult[] = [];
+  const searchPromises: Promise<BusinessResult[]>[] = [];
 
-  // If keyword search, use both Nominatim and Overpass
+  // If keyword search, use all available sources
   if (keyword && keyword.trim()) {
-    // First try Nominatim (good for text search)
-    const nominatimResults = await searchWithNominatim(
-      keyword,
-      options.center,
-      options.radius,
-      limit
-    );
-    results = [...nominatimResults];
+    // Try Google Places first (best quality results, if API key available)
+    if (GOOGLE_PLACES_KEY) {
+      searchPromises.push(
+        searchWithGooglePlaces(keyword, options.center, options.radius, limit)
+      );
+    }
 
-    // Wait to respect rate limits
+    // Also try Nominatim (good for text search)
+    searchPromises.push(
+      searchWithNominatim(keyword, options.center, options.radius, limit)
+    );
+
+    // Run initial searches in parallel
+    const initialResults = await Promise.all(searchPromises);
+    results = initialResults.flat();
+
+    // Wait to respect Overpass rate limits
     await new Promise(resolve => setTimeout(resolve, 1100));
 
-    // Then try Overpass (good for structured data)
+    // Then try Overpass (good for structured OSM data)
     const overpassResults = await searchWithOverpass(options);
     results = [...results, ...overpassResults];
   } else {
-    // Category-only search - just use Overpass
+    // Category-only search - use Overpass
     results = await searchWithOverpass(options);
   }
 
@@ -433,17 +539,21 @@ function calculateDistance(from: Coordinates, to: Coordinates): number {
 }
 
 export function formatBusinessDistance(meters: number): string {
-  if (meters < 1000) {
-    return `${Math.round(meters)} m`;
+  const miles = meters / 1609.34;
+  if (miles < 0.1) {
+    const feet = meters * 3.28084;
+    return `${Math.round(feet)} ft`;
   }
-  return `${(meters / 1000).toFixed(1)} km`;
+  return `${miles.toFixed(1)} mi`;
 }
 
 export function getBusinessCategories(): { value: BusinessCategory; label: string }[] {
   return [
     { value: 'all', label: 'All Businesses' },
-    { value: 'restaurant', label: 'Restaurants & Cafes' },
+    { value: 'wireless', label: 'Wireless & Cell Phones' },
+    { value: 'electronics', label: 'Electronics Stores' },
     { value: 'retail', label: 'Retail Stores' },
+    { value: 'restaurant', label: 'Restaurants & Cafes' },
     { value: 'office', label: 'Offices' },
     { value: 'healthcare', label: 'Healthcare' },
     { value: 'automotive', label: 'Automotive' },

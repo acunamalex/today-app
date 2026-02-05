@@ -1,6 +1,6 @@
 import emailjs from '@emailjs/browser';
 import type { DayReport } from '../types';
-import { generateExecutiveSummary } from './exportService';
+import { generateExecutiveSummary, exportToPDF } from './exportService';
 
 // EmailJS configuration
 // To use this service:
@@ -26,12 +26,30 @@ export function isEmailConfigured(): boolean {
 }
 
 /**
- * Send executive summary via EmailJS
+ * Convert blob to base64 string
+ */
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result as string;
+      // Remove data URL prefix (e.g., "data:application/pdf;base64,")
+      const base64Content = base64String.split(',')[1];
+      resolve(base64Content);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Send executive summary via EmailJS with optional PDF attachment
  */
 export async function sendExecutiveSummaryEmail(
   report: DayReport,
   toEmail: string,
-  fromName: string = 'Today Route Planner'
+  fromName: string = 'Today Route Planner',
+  includePdfAttachment: boolean = true
 ): Promise<EmailResult> {
   if (!isEmailConfigured()) {
     return {
@@ -49,17 +67,36 @@ export async function sendExecutiveSummaryEmail(
 
   const summaryText = generateExecutiveSummary(report);
   const dateStr = new Date(report.date).toLocaleDateString();
+  const dateFileStr = new Date(report.date).toISOString().split('T')[0];
 
-  const templateParams = {
+  // Build template params
+  const templateParams: Record<string, string> = {
     to_email: toEmail,
     subject: `Executive Summary - Route Report ${dateStr}`,
     message: summaryText,
     from_name: fromName,
     report_date: dateStr,
     stops_completed: `${report.summary.completedStops}/${report.summary.totalStops}`,
-    total_distance: `${report.summary.totalDistance.toFixed(1)} km`,
+    total_distance: `${(report.summary.totalDistance * 0.621371).toFixed(1)} mi`,
     efficiency: `${report.summary.locationsPerHour.toFixed(1)} locations/hour`,
   };
+
+  // Generate and attach PDF if requested
+  if (includePdfAttachment) {
+    try {
+      const pdfBlob = await exportToPDF(report);
+      const pdfBase64 = await blobToBase64(pdfBlob);
+
+      // EmailJS supports attachments via content parameter
+      // The template needs to have attachment support configured
+      templateParams.attachment = pdfBase64;
+      templateParams.attachment_name = `route-report-${dateFileStr}.pdf`;
+      templateParams.attachment_type = 'application/pdf';
+    } catch (error) {
+      console.error('Failed to generate PDF attachment:', error);
+      // Continue without attachment
+    }
+  }
 
   try {
     const response = await emailjs.send(
@@ -72,7 +109,7 @@ export async function sendExecutiveSummaryEmail(
     if (response.status === 200) {
       return {
         success: true,
-        message: `Summary sent successfully to ${toEmail}!`,
+        message: `Summary${includePdfAttachment ? ' with PDF' : ''} sent successfully to ${toEmail}!`,
       };
     } else {
       return {
@@ -80,11 +117,13 @@ export async function sendExecutiveSummaryEmail(
         message: 'Failed to send email. Please try again.',
       };
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('EmailJS error:', error);
+    // Get more detailed error message from EmailJS
+    const errorMessage = error?.text || error?.message || 'Unknown error';
     return {
       success: false,
-      message: error instanceof Error ? error.message : 'Failed to send email.',
+      message: `Email failed: ${errorMessage}`,
     };
   }
 }

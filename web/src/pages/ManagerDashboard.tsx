@@ -386,9 +386,9 @@ export function ManagerDashboard() {
                       <div className="text-center p-3 bg-slate-50 rounded-lg">
                         <p className="text-xl font-bold text-slate-900">
                           {(
-                            selectedWorker.todayRoute.totalDistance / 1000
+                            selectedWorker.todayRoute.totalDistance / 1609.34
                           ).toFixed(1)}
-                          km
+                          mi
                         </p>
                         <p className="text-xs text-slate-500">Distance</p>
                       </div>
@@ -451,10 +451,10 @@ export function ManagerDashboard() {
                       <div className="flex justify-between">
                         <span className="text-slate-500">Distance:</span>
                         <span className="font-medium">
-                          {selectedWorker.lastReport.summary.totalDistance.toFixed(
+                          {(selectedWorker.lastReport.summary.totalDistance * 0.621371).toFixed(
                             1
                           )}
-                          km
+                          mi
                         </span>
                       </div>
                     </div>

@@ -65,7 +65,7 @@ export async function exportToPDF(report: DayReport): Promise<Blob> {
     { label: 'Total Stops', value: summary.totalStops.toString() },
     { label: 'Completed', value: summary.completedStops.toString() },
     { label: 'Skipped', value: summary.skippedStops.toString() },
-    { label: 'Total Distance', value: `${summary.totalDistance.toFixed(1)} km` },
+    { label: 'Total Distance', value: `${(summary.totalDistance * 0.621371).toFixed(1)} mi` },
     { label: 'Drive Time', value: `${summary.totalDriveTime} min` },
     { label: 'On-Site Time', value: `${summary.totalOnSiteTime} min` },
     { label: 'Locations/Hour', value: summary.locationsPerHour.toFixed(1) },
@@ -336,7 +336,7 @@ Summary:
 - Total Stops: ${report.summary.totalStops}
 - Completed: ${report.summary.completedStops}
 - Skipped: ${report.summary.skippedStops}
-- Total Distance: ${report.summary.totalDistance.toFixed(1)} km
+- Total Distance: ${(report.summary.totalDistance * 0.621371).toFixed(1)} mi
 - Total Time: ${report.summary.totalTime} minutes
 
 Key Observations:
@@ -373,7 +373,7 @@ export function generateExecutiveSummary(report: DayReport): string {
   text += `📈 PERFORMANCE METRICS\n`;
   text += `━━━━━━━━━━━━━━━━━━━━━━━\n`;
   text += `• Stops Completed: ${summary.completedStops}/${summary.totalStops}\n`;
-  text += `• Total Distance: ${summary.totalDistance.toFixed(1)} km\n`;
+  text += `• Total Distance: ${(summary.totalDistance * 0.621371).toFixed(1)} mi\n`;
   text += `• Total Time: ${Math.round(summary.totalTime / 60)} hrs ${summary.totalTime % 60} min\n`;
   text += `• Efficiency: ${summary.locationsPerHour.toFixed(1)} locations/hour\n`;
   text += `• Avg Time per Stop: ${summary.averageTimePerStop} min\n\n`;

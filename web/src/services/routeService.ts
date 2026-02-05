@@ -227,10 +227,10 @@ function haversineDistance(from: Coordinates, to: Coordinates): number {
 }
 
 /**
- * Estimate duration based on distance (assuming 40 km/h average speed in urban areas)
+ * Estimate duration based on distance (assuming 25 mph average speed in urban areas)
  */
 function estimateDuration(distanceMeters: number): number {
-  const avgSpeedMps = 40 * 1000 / 3600; // 40 km/h in m/s
+  const avgSpeedMps = 25 * 1609.34 / 3600; // 25 mph in m/s
   return distanceMeters / avgSpeedMps;
 }
 
@@ -241,14 +241,15 @@ export function formatRouteSummary(
   distance: number,
   duration: number
 ): { distance: string; duration: string } {
-  const distanceKm = distance / 1000;
+  const distanceMiles = distance / 1609.34;
   const durationMinutes = Math.round(duration / 60);
 
   let distanceStr: string;
-  if (distanceKm < 1) {
-    distanceStr = `${Math.round(distance)} m`;
+  if (distanceMiles < 0.1) {
+    const feet = distance * 3.28084;
+    distanceStr = `${Math.round(feet)} ft`;
   } else {
-    distanceStr = `${distanceKm.toFixed(1)} km`;
+    distanceStr = `${distanceMiles.toFixed(1)} mi`;
   }
 
   let durationStr: string;

@@ -189,14 +189,15 @@ export function calculateDistance(
 }
 
 /**
- * Format distance for display
+ * Format distance for display (in miles)
  */
 export function formatDistance(meters: number): string {
-  if (meters < 1000) {
-    return `${Math.round(meters)} m`;
+  const miles = meters / 1609.34;
+  if (miles < 0.1) {
+    const feet = meters * 3.28084;
+    return `${Math.round(feet)} ft`;
   }
-  const km = meters / 1000;
-  return `${km.toFixed(1)} km`;
+  return `${miles.toFixed(1)} mi`;
 }
 
 /**

@@ -160,12 +160,12 @@ export async function generateAIInsights(
 
   // Route efficiency
   if (route.totalDistance > 0 && completedStops.length > 0) {
-    const kmPerStop = route.totalDistance / 1000 / completedStops.length;
-    if (kmPerStop > 10) {
+    const milesPerStop = route.totalDistance / 1609.34 / completedStops.length;
+    if (milesPerStop > 6) {
       observations.push(
-        `High travel distance per stop (${kmPerStop.toFixed(1)} km) - consider optimizing route clustering.`
+        `High travel distance per stop (${milesPerStop.toFixed(1)} mi) - consider optimizing route clustering.`
       );
-    } else if (kmPerStop < 2) {
+    } else if (milesPerStop < 1.2) {
       observations.push(
         'Efficient route with stops clustered closely together.'
       );
@@ -199,7 +199,7 @@ export function generateTextSummary(
   summary += `Total Stops: ${stops.length}\n`;
   summary += `Completed: ${completedStops.length}\n`;
   summary += `Skipped: ${skippedStops.length}\n`;
-  summary += `Total Distance: ${(route.totalDistance / 1000).toFixed(1)} km\n`;
+  summary += `Total Distance: ${(route.totalDistance / 1609.34).toFixed(1)} mi\n`;
   summary += `Total Duration: ${Math.round(route.totalDuration / 60)} minutes\n\n`;
 
   summary += 'KEY OBSERVATIONS\n';

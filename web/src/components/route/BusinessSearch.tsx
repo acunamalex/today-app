@@ -25,7 +25,7 @@ export function BusinessSearch({
 }: BusinessSearchProps) {
   const [category, setCategory] = useState<BusinessCategory>('all');
   const [keyword, setKeyword] = useState('');
-  const [radius, setRadius] = useState(5000); // 5km default
+  const [radius, setRadius] = useState(8046); // 5 mi default
   const [results, setResults] = useState<BusinessResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,11 +110,11 @@ export function BusinessSearch({
             value={radius.toString()}
             onChange={(e) => setRadius(parseInt(e.target.value))}
             options={[
-              { value: '1000', label: '1 km' },
-              { value: '2000', label: '2 km' },
-              { value: '5000', label: '5 km' },
-              { value: '10000', label: '10 km' },
-              { value: '25000', label: '25 km' },
+              { value: '1609', label: '1 mi' },
+              { value: '3218', label: '2 mi' },
+              { value: '8046', label: '5 mi' },
+              { value: '16093', label: '10 mi' },
+              { value: '40233', label: '25 mi' },
             ]}
             fullWidth={false}
             className="w-32"

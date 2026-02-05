@@ -102,25 +102,26 @@ export function isDateToday(dateString: string): boolean {
 }
 
 /**
- * Format distance for display
+ * Format distance for display (in miles)
  */
 export function formatDistance(meters: number): string {
-  if (meters < 1000) {
-    return `${Math.round(meters)} m`;
+  const miles = meters / 1609.34;
+  if (miles < 0.1) {
+    const feet = meters * 3.28084;
+    return `${Math.round(feet)} ft`;
   }
-  const km = meters / 1000;
-  if (km < 10) {
-    return `${km.toFixed(1)} km`;
+  if (miles < 10) {
+    return `${miles.toFixed(1)} mi`;
   }
-  return `${Math.round(km)} km`;
+  return `${Math.round(miles)} mi`;
 }
 
 /**
- * Format speed for display
+ * Format speed for display (in mph)
  */
 export function formatSpeed(metersPerSecond: number): string {
-  const kmh = metersPerSecond * 3.6;
-  return `${Math.round(kmh)} km/h`;
+  const mph = metersPerSecond * 2.23694;
+  return `${Math.round(mph)} mph`;
 }
 
 /**

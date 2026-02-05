@@ -392,7 +392,7 @@ export function Reports() {
           <MetricCard
             icon={Route}
             label="Distance"
-            value={`${summary.totalDistance}km`}
+            value={`${(summary.totalDistance * 0.621371).toFixed(1)}mi`}
           />
           <MetricCard
             icon={Clock}
