@@ -161,7 +161,137 @@ export function ActiveRoute() {
     (s) => s.status === 'completed' || s.status === 'skipped'
   );
 
-  if (!currentRoute || !currentStop) {
+  // Handle loading state
+  if (!currentRoute) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-slate-500">Loading route...</p>
+      </div>
+    );
+  }
+
+  // Handle case when all stops are done but no current stop selected
+  if (!currentStop && stops.length > 0) {
+    // Find the last stop to display or show completion screen
+    const lastStop = stops[stops.length - 1];
+    if (allStopsCompleted) {
+      return (
+        <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+          <div className="w-20 h-20 rounded-full bg-success-100 flex items-center justify-center mb-6">
+            <CheckCircle className="w-12 h-12 text-success-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">Route Complete!</h1>
+          <p className="text-slate-600 mb-8 text-center">
+            You've completed {completedStops} of {stops.length} stops today.
+          </p>
+          <div className="space-y-3 w-full max-w-xs">
+            <Button
+              fullWidth
+              onClick={() => setShowCompleteModal(true)}
+              leftIcon={<Flag className="w-4 h-4" />}
+            >
+              Finish & Send Summary
+            </Button>
+            <Button
+              fullWidth
+              variant="outline"
+              onClick={() => navigate('/reports')}
+              leftIcon={<FileText className="w-4 h-4" />}
+            >
+              View Report
+            </Button>
+            <Button
+              fullWidth
+              variant="ghost"
+              onClick={() => navigate('/')}
+              leftIcon={<Home className="w-4 h-4" />}
+            >
+              Back to Home
+            </Button>
+          </div>
+
+          {/* Complete route modal */}
+          <ConfirmModal
+            isOpen={showCompleteModal}
+            onClose={() => setShowCompleteModal(false)}
+            onConfirm={handleCompleteRoute}
+            title="Complete Route?"
+            message="Great work! Ready to generate your daily report and send the summary?"
+            confirmText="Complete & Send Summary"
+          />
+
+          {/* Route Completed Modal */}
+          <Modal
+            isOpen={showRouteCompletedModal}
+            onClose={() => {}}
+            title="Route Complete!"
+            size="sm"
+          >
+            <div className="space-y-4">
+              <div className="text-center py-4">
+                <div className="w-16 h-16 rounded-full bg-success-100 flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-10 h-10 text-success-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                  Great Work Today!
+                </h3>
+                <p className="text-slate-600 text-sm">
+                  You completed {completedStops} of {stops.length} stops.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Button
+                  fullWidth
+                  onClick={handleSendSummary}
+                  isLoading={isSendingSummary}
+                  leftIcon={<Send className="w-4 h-4" />}
+                >
+                  Send Executive Summary
+                </Button>
+
+                <Button
+                  fullWidth
+                  variant="outline"
+                  onClick={handleCopySummary}
+                  leftIcon={<FileText className="w-4 h-4" />}
+                >
+                  Copy Summary to Clipboard
+                </Button>
+
+                <Button
+                  fullWidth
+                  variant="outline"
+                  onClick={() => {
+                    setShowRouteCompletedModal(false);
+                    navigate('/reports');
+                  }}
+                  leftIcon={<FileText className="w-4 h-4" />}
+                >
+                  View Full Report
+                </Button>
+
+                <Button
+                  fullWidth
+                  variant="ghost"
+                  onClick={() => {
+                    setShowRouteCompletedModal(false);
+                    navigate('/');
+                  }}
+                  leftIcon={<Home className="w-4 h-4" />}
+                >
+                  Back to Home
+                </Button>
+              </div>
+            </div>
+          </Modal>
+        </div>
+      );
+    }
+  }
+
+  // If still no current stop, show loading
+  if (!currentStop) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <p className="text-slate-500">Loading route...</p>
