@@ -20,6 +20,9 @@ import {
   Share2,
   Copy,
   Send,
+  Search,
+  Filter,
+  XCircle,
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useRouteStore } from '../stores/routeStore';
@@ -206,6 +209,8 @@ function StopReportCard({
   );
 }
 
+type StopFilter = 'all' | 'completed' | 'skipped';
+
 export function Reports() {
   const navigate = useNavigate();
   const [showExportModal, setShowExportModal] = useState(false);
@@ -213,6 +218,8 @@ export function Reports() {
   const [exportEmail, setExportEmail] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [stopFilter, setStopFilter] = useState<StopFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const { user } = useAuthStore();
   const { currentRoute } = useRouteStore();
@@ -339,6 +346,25 @@ export function Reports() {
   }
 
   const { summary, stopReports } = currentReport;
+
+  // Filter stops based on search and filter
+  const filteredStops = stopReports.filter((report) => {
+    // Apply status filter
+    if (stopFilter !== 'all' && report.status !== stopFilter) {
+      return false;
+    }
+
+    // Apply search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      return (
+        report.address.toLowerCase().includes(query) ||
+        (report.name && report.name.toLowerCase().includes(query))
+      );
+    }
+
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-background pb-8">
@@ -475,11 +501,68 @@ export function Reports() {
 
         {/* Stop Details */}
         <div>
-          <h3 className="font-semibold text-slate-900 mb-3">Stop Details</h3>
-          <div className="space-y-2">
-            {stopReports.map((report, index) => (
-              <StopReportCard key={report.stopId} report={report} index={index} />
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-slate-900">Stop Details</h3>
+            <span className="text-sm text-slate-500">
+              {filteredStops.length} of {stopReports.length} stops
+            </span>
+          </div>
+
+          {/* Search and Filter */}
+          <div className="flex gap-2 mb-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by address or name..."
+                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Filter tabs */}
+          <div className="flex gap-1 mb-4 bg-slate-100 rounded-lg p-1">
+            {(['all', 'completed', 'skipped'] as StopFilter[]).map((filter) => (
+              <button
+                key={filter}
+                onClick={() => setStopFilter(filter)}
+                className={clsx(
+                  'flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+                  stopFilter === filter
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                )}
+              >
+                {filter === 'all' && `All (${stopReports.length})`}
+                {filter === 'completed' &&
+                  `Completed (${stopReports.filter((s) => s.status === 'completed').length})`}
+                {filter === 'skipped' &&
+                  `Skipped (${stopReports.filter((s) => s.status === 'skipped').length})`}
+              </button>
             ))}
+          </div>
+
+          <div className="space-y-2">
+            {filteredStops.length > 0 ? (
+              filteredStops.map((report, index) => (
+                <StopReportCard key={report.stopId} report={report} index={index} />
+              ))
+            ) : (
+              <div className="text-center py-8 text-slate-500">
+                <Filter className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p>No stops match your filter</p>
+              </div>
+            )}
           </div>
         </div>
 

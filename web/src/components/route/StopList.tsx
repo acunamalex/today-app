@@ -26,6 +26,9 @@ interface SortableStopProps {
   onClick?: (stopId: string) => void;
   estimatedDuration?: number;
   estimatedDistance?: number;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelection?: (stopId: string) => void;
 }
 
 function SortableStop({
@@ -35,6 +38,9 @@ function SortableStop({
   onClick,
   estimatedDuration,
   estimatedDistance,
+  isSelectionMode,
+  isSelected,
+  onToggleSelection,
 }: SortableStopProps) {
   const {
     attributes,
@@ -59,8 +65,16 @@ function SortableStop({
         estimatedDuration={estimatedDuration}
         estimatedDistance={estimatedDistance}
         onRemove={onRemove ? () => onRemove(stop.id) : undefined}
-        onClick={onClick ? () => onClick(stop.id) : undefined}
-        dragHandleProps={{ ...attributes, ...listeners }}
+        onClick={
+          isSelectionMode && onToggleSelection
+            ? () => onToggleSelection(stop.id)
+            : onClick
+            ? () => onClick(stop.id)
+            : undefined
+        }
+        dragHandleProps={isSelectionMode ? undefined : { ...attributes, ...listeners }}
+        isSelectionMode={isSelectionMode}
+        isSelected={isSelected}
       />
     </div>
   );
@@ -72,6 +86,9 @@ export interface StopListProps {
   onRemove?: (stopId: string) => void;
   onClick?: (stopId: string) => void;
   routeLegs?: { distance: number; duration: number }[];
+  isSelectionMode?: boolean;
+  selectedStops?: Set<string>;
+  onToggleSelection?: (stopId: string) => void;
 }
 
 export function StopList({
@@ -80,6 +97,9 @@ export function StopList({
   onRemove,
   onClick,
   routeLegs,
+  isSelectionMode,
+  selectedStops,
+  onToggleSelection,
 }: StopListProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -126,6 +146,9 @@ export function StopList({
               onClick={onClick}
               estimatedDuration={routeLegs?.[index]?.duration}
               estimatedDistance={routeLegs?.[index]?.distance}
+              isSelectionMode={isSelectionMode}
+              isSelected={selectedStops?.has(stop.id)}
+              onToggleSelection={onToggleSelection}
             />
           ))}
         </div>

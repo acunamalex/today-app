@@ -11,29 +11,16 @@ import {
   Clock,
   Flag,
   ArrowLeft,
-  Send,
   Home,
   FileText,
-  Mail,
-  Copy,
-  Loader2,
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useRouteStore } from '../stores/routeStore';
 import { useUIStore } from '../stores/uiStore';
 import { useGeolocation } from '../hooks/useGeolocation';
-import { RouteMap } from '../components/route';
-import { Button, Card, StatusBadge, ConfirmModal, Modal, Input } from '../components/common';
+import { RouteMap, RouteCompletionModal } from '../components/route';
+import { Button, StatusBadge, ConfirmModal } from '../components/common';
 import { useReportStore } from '../stores/reportStore';
-import {
-  shareExecutiveSummaryViaEmail,
-  copyExecutiveSummaryToClipboard,
-} from '../services/exportService';
-import {
-  sendExecutiveSummaryEmail,
-  isEmailConfigured,
-} from '../services/emailService';
-import { formatDuration, formatDistance } from '../services/geocodeService';
 import type { Stop } from '../types';
 
 export function ActiveRoute() {
@@ -42,9 +29,6 @@ export function ActiveRoute() {
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [showSkipModal, setShowSkipModal] = useState(false);
   const [showRouteCompletedModal, setShowRouteCompletedModal] = useState(false);
-  const [isSendingSummary, setIsSendingSummary] = useState(false);
-  const [recipientEmail, setRecipientEmail] = useState('');
-  const [showEmailInput, setShowEmailInput] = useState(false);
 
   const { user } = useAuthStore();
   const {
@@ -126,59 +110,6 @@ export function ActiveRoute() {
     }
   };
 
-  const handleSendSummary = async () => {
-    if (!currentReport) {
-      addToast('Report not ready yet', 'warning');
-      return;
-    }
-
-    // If email service is configured and we have an email, send directly
-    if (isEmailConfigured() && recipientEmail) {
-      setIsSendingSummary(true);
-      try {
-        const result = await sendExecutiveSummaryEmail(currentReport, recipientEmail);
-        if (result.success) {
-          addToast(result.message, 'success');
-          setShowEmailInput(false);
-          setRecipientEmail('');
-        } else {
-          addToast(result.message, 'error');
-        }
-      } catch (error) {
-        addToast('Failed to send summary', 'error');
-      } finally {
-        setIsSendingSummary(false);
-      }
-    } else {
-      // Fall back to email client
-      shareExecutiveSummaryViaEmail(currentReport, recipientEmail);
-      addToast('Opening email client...', 'success');
-    }
-  };
-
-  const handleOpenEmailClient = () => {
-    if (!currentReport) {
-      addToast('Report not ready yet', 'warning');
-      return;
-    }
-    shareExecutiveSummaryViaEmail(currentReport, recipientEmail);
-    addToast('Opening email client...', 'success');
-  };
-
-  const handleCopySummary = async () => {
-    if (!currentReport) {
-      addToast('Report not ready yet', 'warning');
-      return;
-    }
-
-    const success = await copyExecutiveSummaryToClipboard(currentReport);
-    if (success) {
-      addToast('Summary copied to clipboard!', 'success');
-    } else {
-      addToast('Failed to copy summary', 'error');
-    }
-  };
-
   const handleOpenNavigation = () => {
     if (!currentStop) return;
 
@@ -252,90 +183,15 @@ export function ActiveRoute() {
           />
 
           {/* Route Completed Modal */}
-          <Modal
+          <RouteCompletionModal
             isOpen={showRouteCompletedModal}
-            onClose={() => {}}
-            title="Route Complete!"
-            size="sm"
-          >
-            <div className="space-y-4">
-              <div className="text-center py-4">
-                <div className="w-16 h-16 rounded-full bg-success-100 flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="w-10 h-10 text-success-600" />
-                </div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">
-                  Great Work Today!
-                </h3>
-                <p className="text-slate-600 text-sm">
-                  You completed {completedStops} of {stops.length} stops.
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                {/* Email input section */}
-                <div className="space-y-2">
-                  <Input
-                    label="Recipient Email"
-                    type="email"
-                    value={recipientEmail}
-                    onChange={(e) => setRecipientEmail(e.target.value)}
-                    placeholder="manager@company.com"
-                  />
-
-                  <Button
-                    fullWidth
-                    onClick={handleSendSummary}
-                    isLoading={isSendingSummary}
-                    leftIcon={<Send className="w-4 h-4" />}
-                    disabled={!recipientEmail || !recipientEmail.includes('@')}
-                  >
-                    {isEmailConfigured() ? 'Send Email Directly' : 'Send via Email Client'}
-                  </Button>
-
-                  {!isEmailConfigured() && (
-                    <p className="text-xs text-slate-400 text-center">
-                      Opens your default email app
-                    </p>
-                  )}
-                </div>
-
-                <div className="border-t border-slate-200 pt-3 space-y-2">
-                  <Button
-                    fullWidth
-                    variant="outline"
-                    onClick={handleCopySummary}
-                    leftIcon={<Copy className="w-4 h-4" />}
-                  >
-                    Copy Summary to Clipboard
-                  </Button>
-
-                  <Button
-                    fullWidth
-                    variant="outline"
-                    onClick={() => {
-                      setShowRouteCompletedModal(false);
-                      navigate('/reports');
-                    }}
-                    leftIcon={<FileText className="w-4 h-4" />}
-                  >
-                    View Full Report
-                  </Button>
-
-                  <Button
-                    fullWidth
-                    variant="ghost"
-                    onClick={() => {
-                      setShowRouteCompletedModal(false);
-                      navigate('/');
-                    }}
-                    leftIcon={<Home className="w-4 h-4" />}
-                  >
-                    Back to Home
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </Modal>
+            onClose={() => setShowRouteCompletedModal(false)}
+            report={currentReport}
+            completedStops={completedStops}
+            totalStops={stops.length}
+            totalDistance={currentRoute?.totalDistance}
+            totalTime={currentRoute?.totalDuration ? Math.round(currentRoute.totalDuration / 60) : undefined}
+          />
         </div>
       );
     }
@@ -462,16 +318,62 @@ export function ActiveRoute() {
           {isDrawerOpen && (
             <>
               {/* Time info */}
-              {currentStop.arrivedAt && (
-                <div className="flex items-center gap-4 mb-4 text-sm text-slate-500">
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-4 h-4" />
-                    Arrived:{' '}
-                    {new Date(currentStop.arrivedAt).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
+              {(currentStop.arrivedAt || currentStop.departedAt || currentStop.status === 'in_progress') && (
+                <div className="bg-slate-50 rounded-lg p-3 mb-4">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    {/* Arrived */}
+                    <div>
+                      <p className="text-xs text-slate-500 mb-1">Arrived</p>
+                      <p className="text-sm font-medium text-slate-900">
+                        {currentStop.arrivedAt
+                          ? new Date(currentStop.arrivedAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '--:--'}
+                      </p>
+                    </div>
+                    {/* Departed */}
+                    <div>
+                      <p className="text-xs text-slate-500 mb-1">Departed</p>
+                      <p className="text-sm font-medium text-slate-900">
+                        {currentStop.departedAt
+                          ? new Date(currentStop.departedAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : currentStop.arrivedAt && !currentStop.departedAt
+                          ? 'On-site'
+                          : '--:--'}
+                      </p>
+                    </div>
+                    {/* Time spent */}
+                    <div>
+                      <p className="text-xs text-slate-500 mb-1">Time Spent</p>
+                      <p className="text-sm font-medium text-slate-900">
+                        {currentStop.departedAt && currentStop.arrivedAt
+                          ? `${Math.round(
+                              (new Date(currentStop.departedAt).getTime() -
+                                new Date(currentStop.arrivedAt).getTime()) /
+                                60000
+                            )} min`
+                          : currentStop.arrivedAt && !currentStop.departedAt
+                          ? `${Math.round(
+                              (Date.now() - new Date(currentStop.arrivedAt).getTime()) / 60000
+                            )} min`
+                          : '--'}
+                      </p>
+                    </div>
+                  </div>
+                  {/* Live timer for in-progress stops */}
+                  {currentStop.status === 'in_progress' && currentStop.arrivedAt && (
+                    <div className="mt-2 pt-2 border-t border-slate-200 text-center">
+                      <span className="inline-flex items-center gap-1 text-xs text-primary-600 bg-primary-50 px-2 py-1 rounded-full">
+                        <Clock className="w-3 h-3 animate-pulse" />
+                        Currently on-site
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -564,90 +466,15 @@ export function ActiveRoute() {
       />
 
       {/* Route Completed Modal */}
-      <Modal
+      <RouteCompletionModal
         isOpen={showRouteCompletedModal}
-        onClose={() => {}}
-        title="Route Complete!"
-        size="sm"
-      >
-        <div className="space-y-4">
-          <div className="text-center py-4">
-            <div className="w-16 h-16 rounded-full bg-success-100 flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="w-10 h-10 text-success-600" />
-            </div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">
-              Great Work Today!
-            </h3>
-            <p className="text-slate-600 text-sm">
-              You completed {completedStops} of {stops.length} stops.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            {/* Email input section */}
-            <div className="space-y-2">
-              <Input
-                label="Recipient Email"
-                type="email"
-                value={recipientEmail}
-                onChange={(e) => setRecipientEmail(e.target.value)}
-                placeholder="manager@company.com"
-              />
-
-              <Button
-                fullWidth
-                onClick={handleSendSummary}
-                isLoading={isSendingSummary}
-                leftIcon={<Send className="w-4 h-4" />}
-                disabled={!recipientEmail || !recipientEmail.includes('@')}
-              >
-                {isEmailConfigured() ? 'Send Email Directly' : 'Send via Email Client'}
-              </Button>
-
-              {!isEmailConfigured() && (
-                <p className="text-xs text-slate-400 text-center">
-                  Opens your default email app
-                </p>
-              )}
-            </div>
-
-            <div className="border-t border-slate-200 pt-3 space-y-2">
-              <Button
-                fullWidth
-                variant="outline"
-                onClick={handleCopySummary}
-                leftIcon={<Copy className="w-4 h-4" />}
-              >
-                Copy Summary to Clipboard
-              </Button>
-
-              <Button
-                fullWidth
-                variant="outline"
-                onClick={() => {
-                  setShowRouteCompletedModal(false);
-                  navigate('/reports');
-                }}
-                leftIcon={<FileText className="w-4 h-4" />}
-              >
-                View Full Report
-              </Button>
-
-              <Button
-                fullWidth
-                variant="ghost"
-                onClick={() => {
-                  setShowRouteCompletedModal(false);
-                  navigate('/');
-                }}
-                leftIcon={<Home className="w-4 h-4" />}
-              >
-                Back to Home
-              </Button>
-            </div>
-          </div>
-        </div>
-      </Modal>
+        onClose={() => setShowRouteCompletedModal(false)}
+        report={currentReport}
+        completedStops={completedStops}
+        totalStops={stops.length}
+        totalDistance={currentRoute?.totalDistance}
+        totalTime={currentRoute?.totalDuration ? Math.round(currentRoute.totalDuration / 60) : undefined}
+      />
     </div>
   );
 }

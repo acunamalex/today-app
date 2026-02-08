@@ -11,6 +11,9 @@ import {
   Loader2,
   Upload,
   Building2,
+  Trash2,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useRouteStore } from '../stores/routeStore';
@@ -36,6 +39,8 @@ export function DaySetup() {
   const [showMap, setShowMap] = useState(true);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showBusinessSearch, setShowBusinessSearch] = useState(false);
+  const [selectedStops, setSelectedStops] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
 
   const { user } = useAuthStore();
   const {
@@ -138,6 +143,56 @@ export function DaySetup() {
     } catch (error) {
       addToast('Failed to remove stop', 'error');
     }
+  };
+
+  const toggleStopSelection = (stopId: string) => {
+    setSelectedStops((prev) => {
+      const next = new Set(prev);
+      if (next.has(stopId)) {
+        next.delete(stopId);
+      } else {
+        next.add(stopId);
+      }
+      return next;
+    });
+  };
+
+  const selectAllStops = () => {
+    if (selectedStops.size === stops.length) {
+      setSelectedStops(new Set());
+    } else {
+      setSelectedStops(new Set(stops.map((s) => s.id)));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedStops.size === 0) return;
+
+    const count = selectedStops.size;
+    for (const stopId of selectedStops) {
+      try {
+        await removeStop(stopId);
+      } catch (error) {
+        console.error('Failed to remove stop:', stopId, error);
+      }
+    }
+    setSelectedStops(new Set());
+    setIsSelectionMode(false);
+    addToast(`Removed ${count} stops`, 'success');
+  };
+
+  const handleClearAllStops = async () => {
+    if (stops.length === 0) return;
+
+    const count = stops.length;
+    for (const stop of stops) {
+      try {
+        await removeStop(stop.id);
+      } catch (error) {
+        console.error('Failed to remove stop:', stop.id, error);
+      }
+    }
+    addToast(`Cleared all ${count} stops`, 'success');
   };
 
   const handleOptimize = async () => {
@@ -296,23 +351,83 @@ export function DaySetup() {
         {stops.length > 0 ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="font-medium text-slate-900">
-                Today's Stops ({stops.length})
-              </h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleOptimize}
-                isLoading={isOptimizing}
-                leftIcon={<Route className="w-4 h-4" />}
-              >
-                Optimize Order
-              </Button>
+              <div className="flex items-center gap-2">
+                <h3 className="font-medium text-slate-900">
+                  Today's Stops ({stops.length})
+                </h3>
+                {isSelectionMode && selectedStops.size > 0 && (
+                  <span className="text-sm text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full">
+                    {selectedStops.size} selected
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {isSelectionMode ? (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={selectAllStops}
+                      leftIcon={
+                        selectedStops.size === stops.length ? (
+                          <CheckSquare className="w-4 h-4" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )
+                      }
+                    >
+                      {selectedStops.size === stops.length ? 'Deselect All' : 'Select All'}
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={handleDeleteSelected}
+                      disabled={selectedStops.size === 0}
+                      leftIcon={<Trash2 className="w-4 h-4" />}
+                    >
+                      Delete ({selectedStops.size})
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setIsSelectionMode(false);
+                        setSelectedStops(new Set());
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsSelectionMode(true)}
+                      leftIcon={<CheckSquare className="w-4 h-4" />}
+                    >
+                      Select
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleOptimize}
+                      isLoading={isOptimizing}
+                      leftIcon={<Route className="w-4 h-4" />}
+                    >
+                      Optimize
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
             <StopList
               stops={stops}
               onReorder={reorderStops}
               onRemove={handleRemoveStop}
+              isSelectionMode={isSelectionMode}
+              selectedStops={selectedStops}
+              onToggleSelection={toggleStopSelection}
             />
           </div>
         ) : (

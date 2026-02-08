@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { GripVertical, MapPin, Clock, Trash2, Navigation, CheckCircle, XCircle } from 'lucide-react';
+import { GripVertical, MapPin, Clock, Trash2, Navigation, CheckCircle, XCircle, Square, CheckSquare } from 'lucide-react';
 import type { Stop } from '../../types';
 import { StatusBadge } from '../common';
 import { formatDuration, formatDistance } from '../../services/geocodeService';
@@ -16,6 +16,8 @@ export interface StopCardProps {
   onNavigate?: () => void;
   dragHandleProps?: any;
   showActions?: boolean;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
 }
 
 export function StopCard({
@@ -30,6 +32,8 @@ export function StopCard({
   onNavigate,
   dragHandleProps,
   showActions = true,
+  isSelectionMode = false,
+  isSelected = false,
 }: StopCardProps) {
   const getStatusIcon = () => {
     switch (stop.status) {
@@ -57,13 +61,26 @@ export function StopCard({
         isDragging && 'shadow-lg scale-[1.02]',
         isActive
           ? 'border-primary-500 ring-2 ring-primary-100'
+          : isSelected
+          ? 'border-primary-400 bg-primary-50'
           : 'border-slate-200 hover:border-slate-300',
         onClick && 'cursor-pointer'
       )}
       onClick={onClick}
     >
+      {/* Selection checkbox in selection mode */}
+      {isSelectionMode && (
+        <div className="flex items-center -ml-1">
+          {isSelected ? (
+            <CheckSquare className="w-5 h-5 text-primary-600" />
+          ) : (
+            <Square className="w-5 h-5 text-slate-400" />
+          )}
+        </div>
+      )}
+
       {/* Drag Handle */}
-      {dragHandleProps && (
+      {dragHandleProps && !isSelectionMode && (
         <div
           {...dragHandleProps}
           className="flex items-center px-1 -ml-2 cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 touch-none"
